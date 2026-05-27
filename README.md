@@ -1,5 +1,7 @@
 # Global-Congress-Publication-Intelligence-System
 
+## TO BE UPDATED SOON
+
 Managing pharmaceutical publication strategy across dozens of medical congresses, multiple therapeutic areas, and thousands of scientific documents is genuinely hard to do well. Deadlines overlap, datasets mature unpredictably, and the difference between a well-placed late-breaking abstract and a missed submission window can determine how a drug's clinical story reaches the scientific community.
 The Congress Intelligence System is a medical affairs intelligence platform that maps the global congress calendar across 26 major scientific meetings, 15 therapeutic areas, and over 4,600 tracked publications. It gives publication planners, medical science liaisons, and cross-functional teams a single, structured view of the entire scientific communication landscape — not just their own submissions, but the full competitive and strategic context surrounding them.
 The AI layer is where the system moves from a reference tool to an active planning assistant. Rather than manually searching congress websites, cross-referencing abstract deadlines against internal timelines, and building landscape summaries by hand, the system uses AI to extract and structure publication data directly from congress proceedings and scientific databases — identifying what was presented, in what format, by whom, and indexed against a consistent taxonomy of therapeutic areas and document types. This turns what is normally weeks of analyst work into an automated, continuously refreshed dataset.
