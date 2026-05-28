@@ -1,230 +1,232 @@
-﻿# ðŸ› Congress Intelligence System
+# Global Congress & Publication Intelligence System
 
-AI-powered medical congress publication tracking with RAG-based querying.
+> **👋 I'm currently open to new opportunities.**  
+> I built this to show what's possible when you combine pharma domain knowledge with data engineering and automation. If your team is working on problems like this — medical intelligence, life sciences data, or AI in healthcare — I'd genuinely love to chat.  
+> **[→ Nitin Paighowal on LinkedIn](https://www.linkedin.com/in/nitinpaighowal/)**
 
-**26 major congresses Â· 15 therapeutic areas Â· 2021â€“2028**
+---
+
+## What is this and why does it exist?
+
+Medical affairs and competitive intelligence teams in pharma spend a surprising amount of time doing something that should be automated: tracking what gets published at medical congresses.
+
+Every year, 50+ major congresses — ASCO, ASH, ESC, ESMO, AHA and dozens more — collectively produce tens of thousands of publications, abstracts, and trial readouts. For most teams, monitoring this means manual PubMed searches after each event, spreadsheets passed around by email, and a constant feeling that something important was missed.
+
+I built this system to replace that workflow entirely.
+
+It automatically collects publications from **53 major medical congresses** across **18 therapeutic areas**, classifies the type of evidence (RCT, meta-analysis, review, etc.), and presents everything through an interactive web interface — no database access or technical knowledge required for the end user.
+
+**→ [See it live](https://paighowal.github.io/Global-Congress-Publication-Intelligence-System/)**
+
+---
+
+## The numbers
+
+| | |
+|---|---|
+| Congresses tracked | 53 |
+| Therapeutic areas | 18 |
+| Publications indexed | 32,000+ |
+| Years covered | 2018 – 2027 |
+| Data source | PubMed / NCBI Entrez API |
+
+---
+
+## How the data is collected — the Python pipeline
+
+This is the part I'm most proud of. No manual downloads, no copy-paste. The entire data collection process runs automatically through a Python pipeline.
+
+### Step 1 — Congress registry
+
+Every congress is defined in a JSON config file with its name, acronym, therapeutic areas, typical timing, and a PubMed search string tuned to that congress. Adding a new congress is just adding a new JSON block.
+
+```json
+{
+  "name": "American Society of Clinical Oncology Annual Meeting",
+  "acronym": "ASCO",
+  "therapeutic_areas": ["Oncology", "Hematology"],
+  "pubmed_search_term": "(\"ASCO\"[tiab] OR \"J Clin Oncol\"[journal]) AND (\"Annual Meeting\"[tiab])",
+  "typical_month": [5, 6],
+  "frequency": "annual"
+}
+```
+
+### Step 2 — Automated PubMed search
+
+For each congress and year, the pipeline hits the **NCBI Entrez API** (`esearch` + `efetch`) to pull every matching publication. It handles rate limits, batches requests in groups of 200, and retries on transient errors.
+
+```python
+# Simplified — search PubMed for ASCO 2024 publications
+search_results = Entrez.esearch(
+    db="pubmed",
+    term=f"{congress.pubmed_search_term} AND 2024[pdat]"
+)
+records = Entrez.efetch(db="pubmed", id=pmids, rettype="xml")
+```
+
+### Step 3 — Publication type classification
+
+PubMed assigns publication type tags to every paper (things like *Randomized Controlled Trial*, *Meta-Analysis*, *Review*, *Case Reports*). The pipeline reads those tags and maps them to one of 9 meaningful categories:
+
+| PubMed tag | Classified as |
+|---|---|
+| Randomized Controlled Trial | `rct` |
+| Meta-Analysis | `meta_analysis` |
+| Systematic Review | `systematic_review` |
+| Review | `review` |
+| Clinical Trial (Phase I–IV) | `clinical_trial` |
+| Case Reports | `case_report` |
+| Letter / Editorial | `letter` / `editorial` |
+| Everything else | `manuscript` |
+
+This matters because not all publications carry the same weight. A congress that generates 500 RCTs tells a very different story than one generating 500 editorials.
+
+### Step 4 — Storage and UI generation
+
+Processed data lands in **PostgreSQL**. From there, two Python scripts generate static JavaScript data files that the frontend loads directly:
+
+```
+python scripts/gen_jsx_data.py   # → ui/planData.js  (congress/edition/year data)
+python scripts/gen_pubs_data.py  # → ui/pubsData.js  (32K publications, indexed)
+```
 
 ---
 
 ## Architecture
 
 ```
-PubMed API â”€â”€â”€â”€â”€â”€â”
-Semantic Scholar â”€â”¼â”€â”€â–º scrapers/pubmed_scraper.py
-EuropePMC â”€â”€â”€â”€â”€â”€â”€â”˜
-                          â”‚
-                   core/pipeline.py  (orchestrator)
-                          â”‚
-           â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-           â–¼              â–¼                           â–¼
-  core/ai_enrichment  database/models.py        rag/vector_store.py
-  (Claude API)        (SQLAlchemy ORM)           (ChromaDB + RAG)
-  â”€ Summaries         â”€ SQLite / PostgreSQL      â”€ Embeddings
-  â”€ Drug mentions     â”€ Publications             â”€ Semantic search
-  â”€ Study design      â”€ Authors / Tags           â”€ Claude synthesis
-           â”‚              â”‚                           â”‚
-           â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-                          â–¼
-                  api/api.py (FastAPI)
-                  GET  /congresses
-                  GET  /publications
-                  POST /query  (RAG)
-                  POST /scrape
-                  GET  /stats
-                          â”‚
-                  core/scheduler.py
-                  (APScheduler cron jobs)
+config/congress_config.json
+        │  53 congresses defined here
+        ▼
+  Python Pipeline (core/pipeline.py)
+  │
+  ├── NCBI Entrez API (esearch + efetch)
+  │     └── title, abstract, pub_type tags, PMID, DOI
+  │
+  ├── Publication type classifier
+  │     └── RCT / meta-analysis / review / clinical trial / ...
+  │
+  └── PostgreSQL
+        │
+        ▼
+  Data generators (scripts/)
+  ├── gen_jsx_data.py   →  ui/planData.js   (~274 KB)
+  └── gen_pubs_data.py  →  ui/pubsData.js   (~4.4 MB, indexed format)
+        │
+        ▼
+  Static web app (ui/)
+  ├── index.html          Congress calendar + year summary
+  └── publications.html   Full publications browser
+        │
+        ▼
+  GitHub Pages — zero infrastructure, no server required
+```
+
+The frontend is intentionally serverless. React 18 runs directly in the browser (no Node.js, no build step), data is pre-generated into JavaScript files, and the whole thing deploys as four static files. The only thing a user needs is a URL.
+
+---
+
+## What the interface does
+
+### Congress calendar view
+
+A year-by-quarter calendar showing all 53 congresses. Filter by therapeutic area to focus on what's relevant. Each congress card shows publication count and links to the published evidence. You can see at a glance how a congress has grown or shrunk over time.
+
+### Publications browser
+
+Search and filter across 32,000+ publications in real time. The filters are faceted — selecting "Oncology" as the therapeutic area automatically narrows the Congress dropdown to only show congresses with Oncology publications. Same logic applies across year, quarter, and publication type. Export any filtered view to CSV.
+
+### Summary view
+
+For a selected year, see total publications by congress, a breakdown by publication type (how many RCTs vs reviews vs case reports), and publication activity by therapeutic area — in one screen.
+
+### 2027 planning
+
+Congress stubs for 2027 are pre-populated based on historical timing, so planning teams can start mapping coverage before the year begins.
+
+---
+
+## Therapeutic areas covered
+
+Oncology · Hematology · Cardiology · Neurology · Psychiatry & CNS · Diabetes & Metabolic · Rheumatology · Respiratory · Gastroenterology · Hepatology · Immunology · Dermatology · Infectious Disease · Nephrology · Urology · Endocrinology · Health Economics · Rare Disease
+
+---
+
+## Why this matters for business
+
+**Medical affairs** can stop manually tracking congresses and spend that time on actual analysis. The system gives a structured, searchable record of what was published, where, and what type of evidence it represents.
+
+**Competitive intelligence** teams can see publication patterns across years and therapeutic areas — spotting when a competitor's drug starts generating a surge of RCT-level evidence at specific congresses before it becomes common knowledge.
+
+**Congress planning** — mapping 53 congresses across 4 quarters makes resource allocation tangible. You can see where the biggest evidence windows are and plan accordingly.
+
+**Health economics and market access** — ISPOR and outcomes-focused congresses are tracked alongside clinical congresses, so the real-world evidence and HTA landscape lives in the same system as the clinical data.
+
+**The scale argument:** a team manually tracking 10 congresses a year is probably spending 200–400 hours on PubMed searches, spreadsheet maintenance, and chasing down links. This system cuts that to near zero and covers 5× as many congresses.
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Data collection | Python 3, NCBI Entrez API |
+| Storage | PostgreSQL |
+| DB driver | psycopg2 |
+| Frontend framework | React 18 (UMD — runs in browser, no build needed) |
+| JSX compilation | Babel Standalone |
+| Styling | Inline React styles, Inter font |
+| Deployment | GitHub Pages (static, no backend) |
+
+---
+
+## Running it locally
+
+The frontend works immediately — just open `ui/index.html` in a browser. Data is already baked into the JS files.
+
+To run the full pipeline (PostgreSQL + PubMed API key required):
+
+```bash
+# Dependencies
+pip install psycopg2-binary biopython python-dotenv
+
+# Configure
+cp config/.env.example .env
+# Add your DATABASE_URL and NCBI_API_KEY to .env
+
+# Run pipeline for a congress
+python core/pipeline.py --congress ASCO --year 2024
+
+# Regenerate frontend data
+python scripts/gen_jsx_data.py
+python scripts/gen_pubs_data.py
+python scripts/_splice_data.py
 ```
 
 ---
 
-## Congresses Covered
-
-| Area | Congresses |
-|------|-----------|
-| **Oncology** | ASCO, ESMO, AACR, SABCS |
-| **Hematology** | ASH |
-| **Cardiology** | ESC, ACC, AHA, HFSA |
-| **Neurology** | AAN, ECTRIMS, AAIC |
-| **Diabetes & Metabolic** | ADA, EASD |
-| **Rheumatology** | ACR, EULAR |
-| **Respiratory** | ATS, ERS |
-| **GI / Hepatology** | DDW, UEGW |
-| **Infectious Disease** | IDWeek, CROI |
-| **Dermatology** | AAD, EADV |
-| **Nephrology** | ASN |
-| **Psychiatry & CNS** | APA |
-
----
-
-## Quick Start
-
-### 1. Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Configure
-```bash
-copy config\.env.example .env
-# Edit .env and fill in ANTHROPIC_API_KEY
-```
-
-### 3. Initialize the database
-```bash
-python database/models.py
-# Output: "Database initialized successfully."
-```
-
-### 4. Test a single congress (dry run)
-```bash
-python core/pipeline.py --congress ASCO --year-from 2024 --year-to 2024 --dry-run
-```
-
-### 5. Run with AI enrichment
-```bash
-python core/pipeline.py --congress ASCO --year-from 2021 --year-to 2026
-```
-
-### 6. Run all 26 congresses (2021-2028)
-```bash
-python core/pipeline.py
-# Estimated: 2-8 hours, 50k-200k records, ~50k Claude API calls
-```
-
-### 7. Run a RAG query
-```bash
-python core/pipeline.py --query "What Phase 3 NSCLC trials at ASCO 2024 showed OS benefit?"
-```
-
-### 8. Start the REST API
-```bash
-uvicorn api.api:app --host 0.0.0.0 --port 8000 --reload
-# Docs: http://localhost:8000/docs
-```
-
-### 9. Start the scheduler (automated updates)
-```bash
-python core/scheduler.py
-```
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | Health check |
-| GET | `/congresses` | List all congresses |
-| GET | `/congresses/registry` | Full registry (no DB) |
-| GET | `/publications` | Search / filter publications |
-| POST | `/query` | RAG natural-language query |
-| POST | `/scrape` | Trigger background scrape |
-| GET | `/stats` | System-wide statistics |
-
-### Example RAG query
-```bash
-curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "What Phase 3 NSCLC trials were presented at ASCO or ESMO in 2023?",
-    "year_from": 2023,
-    "year_to": 2023,
-    "n_results": 10
-  }'
-```
-
-### Example publication search
-```bash
-curl "http://localhost:8000/publications?congress=ASCO&year=2024&drug=pembrolizumab&limit=20"
-```
-
----
-
-## Project Structure
+## Project structure
 
 ```
 pharmacongress/
-├── core/
-│   ├── congress_registry.py   # 26-congress master registry
-│   ├── pipeline.py            # End-to-end orchestrator
-│   ├── ai_enrichment.py       # Multi-provider LLM enrichment (Groq/Gemini/Anthropic)
-│   └── scheduler.py           # APScheduler cron jobs
-├── scrapers/
-│   └── pubmed_scraper.py      # PubMed + SemanticScholar + EuropePMC
-├── database/
-│   ├── models.py              # SQLAlchemy ORM schema
-│   └── migrate_legacy.py      # Legacy DB migration (SQLite or PostgreSQL)
-├── rag/
-│   └── vector_store.py        # ChromaDB + RAGQueryEngine
-├── api/
-│   └── api.py                 # FastAPI REST endpoints
-├── ui/                        # React UI components
-│   ├── GlobalPublicationPlan.jsx   # Full dashboard: all years, areas, filters
-│   ├── PublicationPlan2026.jsx     # Legacy Dato-DXd 2026 plan (reference)
-│   └── planData.js                 # Auto-generated DB data (run gen_jsx_data.py)
-├── scripts/
-│   ├── enrich_migrated.py     # Batch AI enrichment of publications
-│   ├── vectorize_publications.py  # Build ChromaDB vector store
-│   └── gen_jsx_data.py        # Export DB data → ui/planData.js
-├── context/                   # Reference documents (not runtime)
-│   ├── CongressIntelligence_ClaudeFeed.pdf
-│   └── CongressIntelligence_ClaudeFeed.pdf.txt
-├── data/
-│   ├── db.sqlite              # Legacy prototype data (4,611 publications)
-│   └── congress_intel.db      # New SQLite DB (mirrors PostgreSQL for local dev)
 ├── config/
-│   └── .env.example
-├── logs/                      # Runtime log output
-├── requirements.txt
-└── README.md
+│   ├── congress_config.json    ← master congress registry (53 entries)
+│   └── ui_config.json          ← colours, icons per therapeutic area
+├── core/
+│   ├── congress_registry.py    ← Python dataclasses + TherapeuticArea enum
+│   └── pipeline.py             ← orchestrates scraping, classification, storage
+├── scripts/
+│   ├── gen_jsx_data.py         ← DB → planData.js (congress/edition data)
+│   ├── gen_pubs_data.py        ← DB → pubsData.js (full publications, indexed)
+│   ├── _sync_congresses.py     ← adds new congresses from config to DB
+│   └── _splice_data.py         ← inlines planData.js into index.html
+└── ui/
+    ├── index.html              ← congress calendar + summary
+    ├── publications.html       ← publications browser
+    ├── planData.js             ← auto-generated (do not hand-edit)
+    └── pubsData.js             ← auto-generated (do not hand-edit)
 ```
 
 ---
 
-## Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | **Yes** | â€” | Claude AI enrichment & RAG |
-| `DATABASE_URL` | No | `sqlite:///data/congress_intel.db` | DB connection string |
-| `CHROMA_DIR` | No | `./chroma_db` | ChromaDB persistence dir |
-| `NCBI_API_KEY` | No | â€” | PubMed 10 req/s (vs 3) |
-| `SEMANTIC_SCHOLAR_API_KEY` | No | â€” | Higher S2 rate limits |
-
----
-
-## Scheduler
-
-Automated updates via APScheduler (`core/scheduler.py`):
-
-| Schedule | Job |
-|----------|-----|
-| Every Monday 02:00 UTC | Incremental scrape (last 2 years) |
-| 1st of each month 03:00 UTC | Full refresh 2021â€“2028 |
-| Jun 15 & Dec 15 04:00 UTC | Oncology + Hematology deep-dive |
-
----
-
-## Model Used
-
-Claude model: **`claude-sonnet-4-6`** (current production default).  
-Prompt caching (`cache_control: ephemeral`) is enabled on system prompts to reduce costs on repeated enrichment calls.
-
----
-
-## Global Publication Plan UI
-
-[ui/GlobalPublicationPlan.jsx](ui/GlobalPublicationPlan.jsx) is a React component that
-displays all **4,611 tracked publications** across **26 congresses × 15 therapeutic areas × 2022–2026**
-with interactive filters (year, quarter, therapeutic area, search) and three views: Calendar, Table, Summary.
-
-Data is sourced from `congress_intel.db` and embedded in [ui/planData.js](ui/planData.js).
-Regenerate the data file whenever the database is updated:
-
-```bash
-python scripts/gen_jsx_data.py
-```
-
-The original focused plan ([ui/PublicationPlan2026.jsx](ui/PublicationPlan2026.jsx)) covers
-Dato-DXd 2026 only and is retained as a reference artifact.
+*Built by [Nitin Paighowal](https://www.linkedin.com/in/nitinpaighowal/) — open to roles in pharma tech, medical informatics, data engineering, and AI in life sciences.*
