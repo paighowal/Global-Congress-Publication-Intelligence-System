@@ -16,7 +16,10 @@ I built this system to replace that workflow entirely.
 
 It automatically collects publications from **53 major medical congresses** across **18 therapeutic areas**, classifies the type of evidence (RCT, meta-analysis, review, etc.), and presents everything through an interactive web interface - no database access or technical knowledge required for the end user.
 
-**→ [See it live](https://paighowal.github.io/Global-Congress-Publication-Intelligence-System/)**
+# **[See it live here](https://paighowal.github.io/Global-Congress-Publication-Intelligence-System/)**
+<img width="1900" height="887" alt="image" src="https://github.com/user-attachments/assets/62adb918-3184-445b-a837-5d0eb4d3afe9" />
+
+<img width="1870" height="900" alt="image" src="https://github.com/user-attachments/assets/1c8d23c5-976f-4fa2-ae16-12d8df5ec41c" />
 
 ---
 
