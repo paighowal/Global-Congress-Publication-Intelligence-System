@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Publications Browser · Congress Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <!-- Babel Standalone compiles JSX in the browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Congress + edition metadata (CONGRESSES, EDITIONS) -->
+  <script src="planData.js"></script>
+  <!-- Full publication dataset (PUBS, PUBS_EDITIONS, PUBS_TYPES, PUBS_AREAS) -->
+  <script src="pubsData.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; background: #F8FAFC; color: #111827; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #F1F5F9; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+    a { text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#64748b;font-size:14px;">
+      Loading publications...
+    </div>
+  </div>
+
+  <script type="text/babel">
+const { useState, useMemo, useCallback, useRef, useEffect } = React;
+
+// ── constants ─────────────────────────────────────────────────────────────────
+const FONT    = "'Inter','Segoe UI',system-ui,-apple-system,sans-serif";
+const PER_PAGE = 50;
+
+const COLOR = {
+  bg:         "#F8FAFC",
+  surface:    "#FFFFFF",
+  surfaceAlt: "#F9FAFB",
+  border:     "#E5E7EB",
+  borderMid:  "#D1D5DB",
+  t1:         "#111827",
+  t2:         "#374151",
+  t3:         "#6B7280",
+  t4:         "#9CA3AF",
+  accent:     "#2563EB",
+  accentBg:   "#EFF6FF",
+  Q1: { bg:"#EFF6FF", border:"#BFDBFE", text:"#1E40AF" },
+  Q2: { bg:"#F0FDF4", border:"#BBF7D0", text:"#166534" },
+  Q3: { bg:"#FFFBEB", border:"#FDE68A", text:"#92400E" },
+  Q4: { bg:"#FFF1F2", border:"#FECDD3", text:"#9F1239" },
+  TBD:{ bg:"#F9FAFB", border:"#E5E7EB", text:"#6B7280" },
+};
+
+const PUB_BADGE = {
+  meeting_abstract:  { color:"#2563EB", bg:"#EFF6FF",  label:"Abstract"       },
+  rct:               { color:"#DC2626", bg:"#FEF2F2",  label:"RCT"            },
+  meta_analysis:     { color:"#7C3AED", bg:"#F5F3FF",  label:"Meta-Analysis"  },
+  systematic_review: { color:"#6D28D9", bg:"#F5F3FF",  label:"Syst. Review"   },
+  review:            { color:"#9333EA", bg:"#FAF5FF",  label:"Review"         },
+  clinical_trial:    { color:"#B45309", bg:"#FFFBEB",  label:"Clinical Trial" },
+  case_report:       { color:"#0369A1", bg:"#E0F2FE",  label:"Case Report"    },
+  letter:            { color:"#475569", bg:"#F1F5F9",  label:"Letter"         },
+  editorial:         { color:"#64748B", bg:"#F8FAFC",  label:"Editorial"      },
+  manuscript:        { color:"#059669", bg:"#ECFDF5",  label:"Article"        },
+  abstract:          { color:"#2563EB", bg:"#EFF6FF",  label:"Abstract"       },
+  oral:              { color:"#7C3AED", bg:"#F5F3FF",  label:"Oral"           },
+  poster:            { color:"#D97706", bg:"#FFFBEB",  label:"Poster"         },
+  lba:               { color:"#DC2626", bg:"#FEF2F2",  label:"Late-Breaking"  },
+};
+
+// ── Build lookup maps ─────────────────────────────────────────────────────────
+const CONGRESS_MAP  = Object.fromEntries(CONGRESSES.map(c => [c.id, c]));
+const EDITION_MAP   = Object.fromEntries(EDITIONS.map(e => [e.id, e]));
+
+// ── Derive year/quarter/congress lists ─────────────────────────────────────────
+const ALL_YEARS     = [...new Set(EDITIONS.map(e => e.year))].filter(Boolean).sort((a,b) => a-b);
+const ALL_CONGRESSES = [...CONGRESSES].sort((a,b) => a.acronym.localeCompare(b.acronym));
+const ALL_TYPES     = PUBS_TYPES;
+const QUARTERS      = ["Q1","Q2","Q3","Q4"];
+
+// ── Decode packed pub row → object ──────────────────────────────────────────
+function decodePub(row, idx) {
+  const eid      = PUBS_EDITIONS[row[1]] || "";
+  const edition  = EDITION_MAP[eid] || {};
+  const congress = CONGRESS_MAP[edition.congressId] || {};
+  return {
+    _idx:      idx,
+    title:     row[0],
+    editionId: eid,
+    pubType:   PUBS_TYPES[row[2]]    || "manuscript",
+    pmid:      row[3],
+    area:      PUBS_AREAS[row[4]]    || "",
+    year:      edition.year          || "",
+    quarter:   edition.quarter       || "",
+    congressId: edition.congressId   || "",
+    congress:  congress,
+  };
+}
+
+// ── Faceted filter helper ─────────────────────────────────────────────────────
+// Pass null/undefined/[] to skip a dimension — used for cross-filter facet computation
+function runFilter({ year, quarters, congress, area, types, search }) {
+  const s = (search || "").toLowerCase().trim();
+  const result = [];
+  for (let i = 0; i < PUBS.length; i++) {
+    const row = PUBS[i];
+    const eid  = PUBS_EDITIONS[row[1]] || "";
+    const pt   = PUBS_TYPES[row[2]]   || "manuscript";
+    const ed   = EDITION_MAP[eid];
+    if (!ed) continue;
+    if (year    != null  && ed.year !== year)                          continue;
+    if (quarters && quarters.length && !quarters.includes(ed.quarter)) continue;
+    if (congress && ed.congressId !== congress)                        continue;
+    if (area    && (PUBS_AREAS[row[4]] || "") !== area)                continue;
+    if (types   && types.length && !types.includes(pt))               continue;
+    if (s) {
+      const title = row[0].toLowerCase();
+      const cid   = (ed.congressId || "").toLowerCase();
+      const cname = (CONGRESS_MAP[ed.congressId]?.name || "").toLowerCase();
+      if (!title.includes(s) && !cid.includes(s) && !cname.includes(s)) continue;
+    }
+    result.push(i);
+  }
+  return result;
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+function exportCSV(rows) {
+  const cols = ["Title","Type","Congress","Year","Quarter","Area","PubMed URL"];
+  const escape = v => `"${String(v||"").replace(/"/g,'""')}"`;
+  const lines = [
+    cols.map(escape).join(","),
+    ...rows.map(r => [
+      r.title,
+      PUB_BADGE[r.pubType]?.label || r.pubType,
+      r.congress?.acronym || r.congressId,
+      r.year,
+      r.quarter,
+      r.area,
+      r.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${r.pmid}/` : "",
+    ].map(escape).join(","))
+  ];
+  const blob = new Blob([lines.join("\n")], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "publications_export.csv";
+  a.click();
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+function TypeBadge({ type }) {
+  const b = PUB_BADGE[type] || PUB_BADGE.manuscript;
+  return (
+    <span style={{
+      display: "inline-block",
+      fontSize: 10, fontWeight: 600, fontFamily: FONT,
+      padding: "2px 7px", borderRadius: 4,
+      background: b.bg, color: b.color,
+      whiteSpace: "nowrap",
+    }}>
+      {b.label || type}
+    </span>
+  );
+}
+
+function QBadge({ q }) {
+  const qc = COLOR[q] || COLOR.TBD;
+  return (
+    <span style={{
+      display: "inline-block",
+      fontSize: 10, fontWeight: 600, fontFamily: FONT,
+      padding: "2px 6px", borderRadius: 4,
+      background: qc.bg, color: qc.text,
+      border: `1px solid ${qc.border}`,
+      whiteSpace: "nowrap",
+    }}>
+      {q}
+    </span>
+  );
+}
+
+function Chip({ active, onClick, color, dim, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+        fontFamily: FONT, fontSize: 11, fontWeight: active ? 700 : 500,
+        border: active ? `1.5px solid ${color||COLOR.accent}` : `1px solid ${COLOR.border}`,
+        background: active ? (color ? color+"18" : COLOR.accentBg) : COLOR.surface,
+        color: active ? (color||COLOR.accent) : COLOR.t3,
+        opacity: dim ? 0.35 : 1,
+        transition: "all 0.12s",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SortIcon({ dir }) {
+  if (!dir) return <span style={{color:COLOR.t4,fontSize:10}}> ⇅</span>;
+  return <span style={{color:COLOR.accent,fontSize:10}}>{dir==="asc" ? " ▲" : " ▼"}</span>;
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+function PublicationsBrowser() {
+  const [search,      setSearch]      = useState("");
+  const [selYear,     setSelYear]     = useState(null);
+  const [selQuarters, setSelQuarters] = useState([]);
+  const [selCongress, setSelCongress] = useState("");
+  const [selArea,     setSelArea]     = useState("");
+  const [selTypes,    setSelTypes]    = useState([]);
+  const [page,        setPage]        = useState(1);
+  const [sort,        setSort]        = useState({ col: null, dir: "asc" });
+  const searchRef = useRef(null);
+
+  // Reset page on any filter change
+  const resetPage = useCallback(() => setPage(1), []);
+
+  function toggleQ(q)    { setSelQuarters(p => p.includes(q) ? p.filter(x=>x!==q) : [...p,q]); resetPage(); }
+  function toggleType(t) { setSelTypes(p => p.includes(t) ? p.filter(x=>x!==t) : [...p,t]);    resetPage(); }
+  function clearAll()    { setSearch(""); setSelYear(null); setSelQuarters([]); setSelCongress(""); setSelArea(""); setSelTypes([]); setPage(1); }
+  const hasFilters = !!search || !!selYear || selQuarters.length || !!selCongress || !!selArea || selTypes.length;
+
+  // Decode + filter (heavy, memoized)
+  const filtered = useMemo(() => {
+    const s = search.toLowerCase().trim();
+    const result = [];
+    for (let i = 0; i < PUBS.length; i++) {
+      const row = PUBS[i];
+      const eid  = PUBS_EDITIONS[row[1]] || "";
+      const pt   = PUBS_TYPES[row[2]]   || "manuscript";
+      const ed   = EDITION_MAP[eid];
+      if (!ed) continue;
+
+      if (selYear     && ed.year    !== selYear)              continue;
+      if (selQuarters.length && !selQuarters.includes(ed.quarter)) continue;
+      if (selCongress && ed.congressId !== selCongress)       continue;
+      if (selArea     && (PUBS_AREAS[row[4]] || "") !== selArea) continue;
+      if (selTypes.length && !selTypes.includes(pt))          continue;
+      if (s) {
+        const title = row[0].toLowerCase();
+        const cid   = (ed.congressId||"").toLowerCase();
+        const cname = (CONGRESS_MAP[ed.congressId]?.name||"").toLowerCase();
+        if (!title.includes(s) && !cid.includes(s) && !cname.includes(s)) continue;
+      }
+      result.push(i);
+    }
+    return result;
+  }, [search, selYear, selQuarters, selCongress, selArea, selTypes]);
+
+  // ── Faceted: available options per filter dimension ────────────────────────
+  // Each set is computed by running ALL other filters (excluding its own dimension)
+
+  const availYears = useMemo(() => {
+    const idxs = runFilter({ year: null, quarters: selQuarters, congress: selCongress, area: selArea, types: selTypes, search });
+    const s = new Set();
+    for (const i of idxs) { const ed = EDITION_MAP[PUBS_EDITIONS[PUBS[i][1]]]; if (ed?.year) s.add(ed.year); }
+    return s;
+  }, [selQuarters, selCongress, selArea, selTypes, search]);
+
+  const availQuarters = useMemo(() => {
+    const idxs = runFilter({ year: selYear, quarters: [], congress: selCongress, area: selArea, types: selTypes, search });
+    const s = new Set();
+    for (const i of idxs) { const ed = EDITION_MAP[PUBS_EDITIONS[PUBS[i][1]]]; if (ed?.quarter) s.add(ed.quarter); }
+    return s;
+  }, [selYear, selCongress, selArea, selTypes, search]);
+
+  const availCongressIds = useMemo(() => {
+    const idxs = runFilter({ year: selYear, quarters: selQuarters, congress: null, area: selArea, types: selTypes, search });
+    const s = new Set();
+    for (const i of idxs) { const ed = EDITION_MAP[PUBS_EDITIONS[PUBS[i][1]]]; if (ed?.congressId) s.add(ed.congressId); }
+    return s;
+  }, [selYear, selQuarters, selArea, selTypes, search]);
+
+  const availAreas = useMemo(() => {
+    const idxs = runFilter({ year: selYear, quarters: selQuarters, congress: selCongress, area: null, types: selTypes, search });
+    const s = new Set();
+    for (const i of idxs) { const a = PUBS_AREAS[PUBS[i][4]] || ""; if (a) s.add(a); }
+    return s;
+  }, [selYear, selQuarters, selCongress, selTypes, search]);
+
+  // Context-aware type counts (all other filters applied, types excluded)
+  const availTypeCounts = useMemo(() => {
+    const idxs = runFilter({ year: selYear, quarters: selQuarters, congress: selCongress, area: selArea, types: [], search });
+    const map = {};
+    for (const i of idxs) { const pt = PUBS_TYPES[PUBS[i][2]] || "manuscript"; map[pt] = (map[pt]||0)+1; }
+    return map;
+  }, [selYear, selQuarters, selCongress, selArea, search]);
+
+  // Auto-clear selections that no longer have any results
+  useEffect(() => {
+    if (selYear !== null && availYears.size > 0 && !availYears.has(selYear)) {
+      setSelYear(null); setPage(1);
+    }
+  }, [selYear, availYears]);
+
+  useEffect(() => {
+    if (selCongress && availCongressIds.size > 0 && !availCongressIds.has(selCongress)) {
+      setSelCongress(""); setPage(1);
+    }
+  }, [selCongress, availCongressIds]);
+
+  useEffect(() => {
+    if (selArea && availAreas.size > 0 && !availAreas.has(selArea)) {
+      setSelArea(""); setPage(1);
+    }
+  }, [selArea, availAreas]);
+
+  // Sort
+  const sorted = useMemo(() => {
+    if (!sort.col) return filtered;
+    const mul = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((ai, bi) => {
+      const a = decodePub(PUBS[ai], ai);
+      const b = decodePub(PUBS[bi], bi);
+      const getVal = (r, col) => {
+        if (col === "title")   return r.title.toLowerCase();
+        if (col === "type")    return PUB_BADGE[r.pubType]?.label || r.pubType;
+        if (col === "congress")return r.congressId;
+        if (col === "year")    return String(r.year);
+        if (col === "quarter") return r.quarter;
+        if (col === "area")    return r.area;
+        return "";
+      };
+      const av = getVal(a, sort.col), bv = getVal(b, sort.col);
+      return av < bv ? -mul : av > bv ? mul : 0;
+    });
+  }, [filtered, sort]);
+
+  const totalPages   = Math.ceil(sorted.length / PER_PAGE);
+  const pageIndices  = sorted.slice((page-1)*PER_PAGE, page*PER_PAGE);
+  const pageRows     = pageIndices.map(i => decodePub(PUBS[i], i));
+
+  function setCol(col) {
+    setSort(prev => prev.col===col ? {col, dir: prev.dir==="asc"?"desc":"asc"} : {col, dir:"asc"});
+    resetPage();
+  }
+
+  const totalAllPubs = PUBS.length;
+
+  // Congress options — only those available given current other filters
+  const congressOptions = ALL_CONGRESSES.filter(c => availCongressIds.has(c.id));
+
+  const thStyle = (col) => ({
+    padding: "10px 14px",
+    textAlign: "left",
+    fontSize: 10,
+    fontWeight: 700,
+    color: sort.col===col ? COLOR.accent : COLOR.t3,
+    letterSpacing: "0.8px",
+    textTransform: "uppercase",
+    fontFamily: FONT,
+    background: COLOR.surface,
+    borderBottom: `2px solid ${COLOR.border}`,
+    cursor: "pointer",
+    userSelect: "none",
+    whiteSpace: "nowrap",
+    position: "sticky",
+    top: 0,
+    zIndex: 2,
+  });
+
+  return (
+    <div style={{ minHeight:"100vh", background:COLOR.bg, fontFamily:FONT }}>
+
+      {/* ── Header ── */}
+      <div style={{
+        background: COLOR.surface,
+        borderBottom: `1px solid ${COLOR.border}`,
+        position: "sticky", top: 0, zIndex: 100,
+        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+      }}>
+        <div style={{ padding: "14px 24px 0" }}>
+
+          {/* Title row */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", paddingBottom:12 }}>
+            <div>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <a href="index.html" style={{ fontSize:11, color:COLOR.accent, fontFamily:FONT, fontWeight:600 }}>
+                  ← Back to Congress Plan
+                </a>
+                <span style={{ color:COLOR.border }}>|</span>
+                <h1 style={{ fontSize:18, fontWeight:800, color:COLOR.t1, letterSpacing:"-0.4px", fontFamily:FONT }}>
+                  Publications Browser
+                </h1>
+              </div>
+              <div style={{ fontSize:11, color:COLOR.t4, marginTop:3, fontFamily:FONT }}>
+                {totalAllPubs.toLocaleString()} total publications · {filtered.length.toLocaleString()} matching filters
+              </div>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              {hasFilters && (
+                <button
+                  onClick={clearAll}
+                  style={{
+                    padding:"5px 14px", borderRadius:6, border:"1px solid #FCA5A5",
+                    cursor:"pointer", fontFamily:FONT, fontSize:11, fontWeight:600,
+                    color:"#DC2626", background:"#FEF2F2",
+                  }}
+                >
+                  ✕ Clear All
+                </button>
+              )}
+              <button
+                onClick={() => exportCSV(sorted.map(i => decodePub(PUBS[i],i)))}
+                style={{
+                  padding:"5px 14px", borderRadius:6,
+                  border:`1px solid ${COLOR.border}`,
+                  cursor:"pointer", fontFamily:FONT, fontSize:11, fontWeight:600,
+                  color:COLOR.t2, background:COLOR.surface,
+                  display:"flex", alignItems:"center", gap:5,
+                }}
+              >
+                ↓ Export CSV ({filtered.length.toLocaleString()})
+              </button>
+            </div>
+          </div>
+
+          {/* Search */}
+          <div style={{ borderTop:`1px solid ${COLOR.border}`, paddingTop:10, paddingBottom:8 }}>
+            <input
+              ref={searchRef}
+              type="text"
+              placeholder="Search by title or congress name..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); resetPage(); }}
+              style={{
+                width:"100%", maxWidth:520,
+                padding:"7px 14px", borderRadius:8,
+                border:`1.5px solid ${search ? COLOR.accent : COLOR.border}`,
+                background:COLOR.surface, color:COLOR.t1,
+                fontFamily:FONT, fontSize:13, outline:"none",
+              }}
+            />
+          </div>
+
+          {/* Filters row 1: Year + Quarter */}
+          <div style={{
+            paddingBottom:8, display:"flex", flexWrap:"wrap", gap:8, alignItems:"center",
+          }}>
+            <span style={{ fontSize:10,fontWeight:700,color:COLOR.t4,letterSpacing:"0.8px",textTransform:"uppercase",fontFamily:FONT }}>Year</span>
+            <Chip active={selYear===null} onClick={() => { setSelYear(null); resetPage(); }} color={COLOR.accent}>
+              All
+            </Chip>
+            {ALL_YEARS.map(y => (
+              <Chip key={y} active={selYear===y} dim={!availYears.has(y)} onClick={() => { setSelYear(y===selYear?null:y); resetPage(); }} color={COLOR.accent}>
+                {y}
+              </Chip>
+            ))}
+
+            <div style={{width:1,height:18,background:COLOR.border}} />
+
+            <span style={{ fontSize:10,fontWeight:700,color:COLOR.t4,letterSpacing:"0.8px",textTransform:"uppercase",fontFamily:FONT }}>Q</span>
+            {QUARTERS.map(q => {
+              const qc = COLOR[q];
+              return (
+                <Chip key={q} active={selQuarters.includes(q)} dim={!availQuarters.has(q)} onClick={() => toggleQ(q)} color={qc.text}>
+                  {q}
+                </Chip>
+              );
+            })}
+
+            <div style={{width:1,height:18,background:COLOR.border}} />
+
+            <span style={{ fontSize:10,fontWeight:700,color:COLOR.t4,letterSpacing:"0.8px",textTransform:"uppercase",fontFamily:FONT }}>Congress</span>
+            <select
+              value={selCongress}
+              onChange={e => { setSelCongress(e.target.value); resetPage(); }}
+              style={{
+                padding:"4px 10px", borderRadius:6,
+                border:`1px solid ${selCongress ? COLOR.accent : COLOR.border}`,
+                background:COLOR.surface, color: selCongress ? COLOR.t1 : COLOR.t3,
+                fontFamily:FONT, fontSize:11, cursor:"pointer",
+                outline:"none",
+              }}
+            >
+              <option value="">All Congresses</option>
+              {congressOptions.map(c => (
+                <option key={c.id} value={c.id}>{c.acronym} — {c.name.slice(0,45)}</option>
+              ))}
+            </select>
+
+            <div style={{width:1,height:18,background:COLOR.border}} />
+
+            <span style={{ fontSize:10,fontWeight:700,color:COLOR.t4,letterSpacing:"0.8px",textTransform:"uppercase",fontFamily:FONT }}>Area</span>
+            <select
+              value={selArea}
+              onChange={e => { setSelArea(e.target.value); resetPage(); }}
+              style={{
+                padding:"4px 10px", borderRadius:6,
+                border:`1px solid ${selArea ? COLOR.accent : COLOR.border}`,
+                background:COLOR.surface, color: selArea ? COLOR.t1 : COLOR.t3,
+                fontFamily:FONT, fontSize:11, cursor:"pointer",
+                outline:"none",
+              }}
+            >
+              <option value="">All Areas</option>
+              {THERAPEUTIC_AREAS.filter(ta => availAreas.has(ta.id)).map(ta => (
+                <option key={ta.id} value={ta.id}>{ta.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filters row 2: Publication type chips */}
+          <div style={{ paddingBottom:10, display:"flex", flexWrap:"wrap", gap:6, alignItems:"center" }}>
+            <span style={{ fontSize:10,fontWeight:700,color:COLOR.t4,letterSpacing:"0.8px",textTransform:"uppercase",fontFamily:FONT }}>Type</span>
+            {ALL_TYPES.map(pt => {
+              const b = PUB_BADGE[pt] || PUB_BADGE.manuscript;
+              const cnt = availTypeCounts[pt] || 0;
+              return (
+                <Chip key={pt} active={selTypes.includes(pt)} dim={cnt === 0} onClick={() => toggleType(pt)} color={b.color}>
+                  <span style={{ display:"inline-flex",alignItems:"center",gap:4 }}>
+                    <span style={{
+                      width:7,height:7,borderRadius:"50%",
+                      background:b.color,opacity:selTypes.includes(pt)?1:0.5,
+                      display:"inline-block",
+                    }} />
+                    {b.label}
+                    <span style={{fontSize:9,opacity:0.6}}>({cnt.toLocaleString()})</span>
+                  </span>
+                </Chip>
+              );
+            })}
+          </div>
+
+        </div>
+      </div>
+
+      {/* ── Table ── */}
+      <div style={{ padding:"20px 24px" }}>
+        {filtered.length === 0 ? (
+          <div style={{
+            textAlign:"center", padding:"60px 20px",
+            color:COLOR.t4, fontSize:14, fontFamily:FONT,
+          }}>
+            No publications match the current filters.
+          </div>
+        ) : (
+          <>
+            {/* Pagination top */}
+            <PaginationBar page={page} totalPages={totalPages} total={filtered.length} setPage={setPage} />
+
+            {/* Table */}
+            <div style={{
+              marginTop:12,
+              border:`1px solid ${COLOR.border}`,
+              borderRadius:10,
+              overflow:"hidden",
+              boxShadow:"0 1px 3px rgba(0,0,0,0.05)",
+            }}>
+              <table style={{
+                width:"100%", borderCollapse:"collapse",
+                fontFamily:FONT, tableLayout:"fixed",
+              }}>
+                <thead>
+                  <tr>
+                    <th style={{...thStyle(null), width:36, cursor:"default"}}>#</th>
+                    <th style={{...thStyle("title"), width:"auto"}} onClick={() => setCol("title")}>
+                      Title <SortIcon dir={sort.col==="title"?sort.dir:null}/>
+                    </th>
+                    <th style={{...thStyle("type"), width:120}} onClick={() => setCol("type")}>
+                      Type <SortIcon dir={sort.col==="type"?sort.dir:null}/>
+                    </th>
+                    <th style={{...thStyle("congress"), width:90}} onClick={() => setCol("congress")}>
+                      Congress <SortIcon dir={sort.col==="congress"?sort.dir:null}/>
+                    </th>
+                    <th style={{...thStyle("year"), width:55}} onClick={() => setCol("year")}>
+                      Year <SortIcon dir={sort.col==="year"?sort.dir:null}/>
+                    </th>
+                    <th style={{...thStyle("quarter"), width:52}} onClick={() => setCol("quarter")}>
+                      Q <SortIcon dir={sort.col==="quarter"?sort.dir:null}/>
+                    </th>
+                    <th style={{...thStyle("area"), width:140}} onClick={() => setCol("area")}>
+                      Area <SortIcon dir={sort.col==="area"?sort.dir:null}/>
+                    </th>
+                    <th style={{...thStyle(null), width:52, cursor:"default"}}>Link</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRows.map((r, ri) => (
+                    <PubRow key={r._idx} row={r} rowNum={(page-1)*PER_PAGE + ri + 1} search={search} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination bottom */}
+            <div style={{ marginTop:14 }}>
+              <PaginationBar page={page} totalPages={totalPages} total={filtered.length} setPage={setPage} />
+            </div>
+          </>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+// ── Table row ─────────────────────────────────────────────────────────────────
+function PubRow({ row, rowNum, search }) {
+  const [hov, setHov] = useState(false);
+  const co = row.congress;
+  const coColor = co?.color || COLOR.t3;
+
+  // Highlight search term in title
+  function hilite(text) {
+    if (!search) return text;
+    const lo = text.toLowerCase(), s = search.toLowerCase().trim();
+    const idx = lo.indexOf(s);
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0,idx)}
+        <mark style={{background:"#FEF08A",color:"inherit",borderRadius:2}}>{text.slice(idx,idx+s.length)}</mark>
+        {text.slice(idx+s.length)}
+      </>
+    );
+  }
+
+  return (
+    <tr
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        background: hov ? COLOR.accentBg : (rowNum%2===0 ? COLOR.surfaceAlt : COLOR.surface),
+        transition: "background 0.1s",
+        borderBottom: `1px solid ${COLOR.border}`,
+      }}
+    >
+      {/* Row number */}
+      <td style={{ padding:"9px 10px 9px 14px", color:COLOR.t4, fontSize:10, fontFamily:FONT, textAlign:"right" }}>
+        {rowNum}
+      </td>
+
+      {/* Title */}
+      <td style={{ padding:"9px 14px 9px 10px" }}>
+        {row.pmid ? (
+          <a
+            href={`https://pubmed.ncbi.nlm.nih.gov/${row.pmid}/`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontSize:12, color:COLOR.t1, fontFamily:FONT,
+              lineHeight:1.5, display:"block",
+              textDecoration: hov ? "underline" : "none",
+              textDecorationColor: COLOR.accent,
+              textUnderlineOffset: "2px",
+            }}
+          >
+            {hilite(row.title)}
+          </a>
+        ) : (
+          <span style={{ fontSize:12, color:COLOR.t1, fontFamily:FONT, lineHeight:1.5 }}>
+            {hilite(row.title)}
+          </span>
+        )}
+      </td>
+
+      {/* Type */}
+      <td style={{ padding:"9px 14px" }}>
+        <TypeBadge type={row.pubType} />
+      </td>
+
+      {/* Congress */}
+      <td style={{ padding:"9px 14px" }}>
+        {co?.website ? (
+          <a
+            href={co.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display:"inline-flex", alignItems:"center", gap:4,
+              fontSize:11, fontWeight:700, color:coColor,
+              fontFamily:FONT, textDecoration:"none",
+            }}
+            onMouseEnter={e=>e.currentTarget.style.textDecoration="underline"}
+            onMouseLeave={e=>e.currentTarget.style.textDecoration="none"}
+          >
+            {row.congressId}
+            <span style={{fontSize:8,opacity:0.5}}>↗</span>
+          </a>
+        ) : (
+          <span style={{ fontSize:11, fontWeight:700, color:coColor, fontFamily:FONT }}>
+            {row.congressId}
+          </span>
+        )}
+      </td>
+
+      {/* Year */}
+      <td style={{ padding:"9px 14px", fontSize:12, color:COLOR.t2, fontFamily:FONT, fontVariantNumeric:"tabular-nums" }}>
+        {row.year}
+      </td>
+
+      {/* Quarter */}
+      <td style={{ padding:"9px 14px" }}>
+        {row.quarter ? <QBadge q={row.quarter} /> : <span style={{color:COLOR.t4,fontSize:11}}>–</span>}
+      </td>
+
+      {/* Area */}
+      <td style={{ padding:"9px 14px", fontSize:11, color:COLOR.t3, fontFamily:FONT }}>
+        {row.area}
+      </td>
+
+      {/* Link */}
+      <td style={{ padding:"9px 14px", textAlign:"center" }}>
+        {row.pmid ? (
+          <a
+            href={`https://pubmed.ncbi.nlm.nih.gov/${row.pmid}/`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="View on PubMed"
+            style={{
+              display:"inline-flex", alignItems:"center", justifyContent:"center",
+              width:26, height:26, borderRadius:6,
+              background: hov ? COLOR.accentBg : "#F1F5F9",
+              color: hov ? COLOR.accent : COLOR.t3,
+              fontSize:13, fontWeight:700,
+              transition:"background 0.1s,color 0.1s",
+              border:`1px solid ${hov ? COLOR.accent+"44" : COLOR.border}`,
+            }}
+          >
+            ↗
+          </a>
+        ) : (
+          <span style={{color:COLOR.t4,fontSize:11}}>–</span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+// ── Pagination ────────────────────────────────────────────────────────────────
+function PaginationBar({ page, totalPages, total, setPage }) {
+  if (totalPages <= 1) return (
+    <div style={{ fontSize:11, color:COLOR.t4, fontFamily:FONT }}>
+      Showing all {total.toLocaleString()} results
+    </div>
+  );
+
+  const start = ((page-1)*PER_PAGE)+1;
+  const end   = Math.min(page*PER_PAGE, total);
+
+  // Page window: current ±2
+  const pageNums = [];
+  for (let i = Math.max(1,page-2); i <= Math.min(totalPages,page+2); i++) {
+    pageNums.push(i);
+  }
+
+  const btnStyle = (active) => ({
+    minWidth:30, height:28, padding:"0 8px",
+    borderRadius:6, cursor:"pointer",
+    fontFamily:FONT, fontSize:11, fontWeight: active ? 700 : 500,
+    border: active ? `1.5px solid ${COLOR.accent}` : `1px solid ${COLOR.border}`,
+    background: active ? COLOR.accentBg : COLOR.surface,
+    color: active ? COLOR.accent : COLOR.t2,
+  });
+
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+      <span style={{ fontSize:11, color:COLOR.t4, fontFamily:FONT, marginRight:4 }}>
+        {start.toLocaleString()}–{end.toLocaleString()} of {total.toLocaleString()}
+      </span>
+      <button style={btnStyle(false)} disabled={page===1} onClick={() => setPage(1)}>«</button>
+      <button style={btnStyle(false)} disabled={page===1} onClick={() => setPage(p => p-1)}>‹</button>
+      {pageNums[0] > 1 && <span style={{color:COLOR.t4,fontSize:12}}>…</span>}
+      {pageNums.map(n => (
+        <button key={n} style={btnStyle(n===page)} onClick={() => setPage(n)}>{n}</button>
+      ))}
+      {pageNums[pageNums.length-1] < totalPages && <span style={{color:COLOR.t4,fontSize:12}}>…</span>}
+      <button style={btnStyle(false)} disabled={page===totalPages} onClick={() => setPage(p => p+1)}>›</button>
+      <button style={btnStyle(false)} disabled={page===totalPages} onClick={() => setPage(totalPages)}>»</button>
+      <span style={{ fontSize:11, color:COLOR.t4, fontFamily:FONT, marginLeft:4 }}>
+        Page {page} of {totalPages.toLocaleString()}
+      </span>
+    </div>
+  );
+}
+
+// ── Mount ─────────────────────────────────────────────────────────────────────
+const _root = ReactDOM.createRoot(document.getElementById('root'));
+_root.render(React.createElement(PublicationsBrowser, null));
+  </script>
+</body>
+</html>
