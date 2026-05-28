@@ -383,7 +383,7 @@ function PublicationsBrowser() {
         <div style={{ padding: "14px 24px 0" }}>
 
           {/* Title row */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", paddingBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", paddingBottom:12 }}>
             <div>
               <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                 <a href="index.html" style={{ fontSize:11, color:COLOR.accent, fontFamily:FONT, fontWeight:600 }}>
@@ -398,31 +398,59 @@ function PublicationsBrowser() {
                 {totalAllPubs.toLocaleString()} total publications · {filtered.length.toLocaleString()} matching filters
               </div>
             </div>
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              {hasFilters && (
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8 }}>
+              {/* Attribution */}
+              <div style={{ display:"flex", alignItems:"center", gap:5, fontFamily:FONT }}>
+                <span style={{ fontSize:10, color:COLOR.t4 }}>Powered by AI</span>
+                <span style={{ color:COLOR.border, lineHeight:1 }}>·</span>
+                <span style={{ fontSize:10, color:COLOR.t3, fontWeight:500 }}>Designed &amp; Architected by</span>
+                <a
+                  href="https://www.linkedin.com/in/nitinpaighowal/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display:"inline-flex", alignItems:"center", gap:4, textDecoration:"none" }}
+                >
+                  <span style={{
+                    fontFamily: FONT, fontSize:12, fontWeight:700,
+                    fontStyle:"italic", color:COLOR.accent, letterSpacing:"-0.3px",
+                  }}>
+                    Nitin Paighowal
+                  </span>
+                  <span style={{
+                    display:"inline-flex", alignItems:"center", justifyContent:"center",
+                    width:14, height:14, borderRadius:2,
+                    background:"#0A66C2", color:"white",
+                    fontSize:8, fontWeight:800, fontStyle:"normal",
+                  }}>in</span>
+                </a>
+              </div>
+              {/* Action buttons */}
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                {hasFilters && (
+                  <button
+                    onClick={clearAll}
+                    style={{
+                      padding:"5px 14px", borderRadius:6, border:"1px solid #FCA5A5",
+                      cursor:"pointer", fontFamily:FONT, fontSize:11, fontWeight:600,
+                      color:"#DC2626", background:"#FEF2F2",
+                    }}
+                  >
+                    ✕ Clear All
+                  </button>
+                )}
                 <button
-                  onClick={clearAll}
+                  onClick={() => exportCSV(sorted.map(i => decodePub(PUBS[i],i)))}
                   style={{
-                    padding:"5px 14px", borderRadius:6, border:"1px solid #FCA5A5",
+                    padding:"5px 14px", borderRadius:6,
+                    border:`1px solid ${COLOR.border}`,
                     cursor:"pointer", fontFamily:FONT, fontSize:11, fontWeight:600,
-                    color:"#DC2626", background:"#FEF2F2",
+                    color:COLOR.t2, background:COLOR.surface,
+                    display:"flex", alignItems:"center", gap:5,
                   }}
                 >
-                  ✕ Clear All
+                  ↓ Export CSV ({filtered.length.toLocaleString()})
                 </button>
-              )}
-              <button
-                onClick={() => exportCSV(sorted.map(i => decodePub(PUBS[i],i)))}
-                style={{
-                  padding:"5px 14px", borderRadius:6,
-                  border:`1px solid ${COLOR.border}`,
-                  cursor:"pointer", fontFamily:FONT, fontSize:11, fontWeight:600,
-                  color:COLOR.t2, background:COLOR.surface,
-                  display:"flex", alignItems:"center", gap:5,
-                }}
-              >
-                ↓ Export CSV ({filtered.length.toLocaleString()})
-              </button>
+              </div>
             </div>
           </div>
 
