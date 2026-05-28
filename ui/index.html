@@ -4156,22 +4156,12 @@ function GlobalPublicationPlan() {
                 Global Congress &amp; Publication Intelligence System
               </h1>
               <div style={{
-                fontSize:      11,
-                fontWeight:    600,
-                color:         COLOR.accent,
-                marginTop:     3,
-                fontFamily:    FONT,
-                letterSpacing: "0.1px",
-              }}>
-                Powered by AI
-              </div>
-              <div style={{
                 fontSize:   11,
                 color:      COLOR.t4,
                 marginTop:  4,
                 fontFamily: FONT,
               }}>
-                33 congresses · 15 therapeutic areas · {totalAllPubs.toLocaleString()} publications tracked ·{" "}
+                {CONGRESSES.length} congresses · {THERAPEUTIC_AREAS.length} therapeutic areas · {totalAllPubs.toLocaleString()} publications tracked ·{" "}
                 <a
                   href="publications.html"
                   target="_blank"
@@ -4188,6 +4178,34 @@ function GlobalPublicationPlan() {
                   onMouseLeave={e => e.currentTarget.style.textDecoration = "none"}
                 >
                   Browse All Publications ↗
+                </a>
+              </div>
+              {/* Attribution */}
+              <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, fontFamily:FONT }}>
+                <span style={{ fontSize:10, color:COLOR.t4 }}>Powered by AI</span>
+                <span style={{ color:COLOR.border, lineHeight:1 }}>·</span>
+                <span style={{ fontSize:10, color:COLOR.t3, fontWeight:500 }}>Designed &amp; Architected by</span>
+                <a
+                  href="https://www.linkedin.com/in/paighowal/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display:"inline-flex", alignItems:"center", gap:4, textDecoration:"none" }}
+                >
+                  <span style={{
+                    fontFamily:    FONT,
+                    fontSize:      12,
+                    fontWeight:    600,
+                    color:         COLOR.accent,
+                    letterSpacing: "-0.3px",
+                  }}>
+                    Nitin Paighowal
+                  </span>
+                  <span style={{
+                    display:"inline-flex", alignItems:"center", justifyContent:"center",
+                    width:14, height:14, borderRadius:2,
+                    background:"#0A66C2", color:"white",
+                    fontSize:8, fontWeight:800, fontStyle:"normal",
+                  }}>in</span>
                 </a>
               </div>
             </div>
