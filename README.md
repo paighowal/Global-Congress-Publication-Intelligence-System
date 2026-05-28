@@ -1,8 +1,8 @@
 # Global Congress & Publication Intelligence System
 
-> **👋 I'm currently open to new opportunities.**  
-> I built this to show what's possible when you combine pharma domain knowledge with data engineering and automation. If your team is working on problems like this — medical intelligence, life sciences data, or AI in healthcare — I'd genuinely love to chat.  
-> **[→ Nitin Paighowal on LinkedIn](https://www.linkedin.com/in/nitinpaighowal/)**
+> **I'm currently open to new opportunities.**  
+> I built this to show what's possible when you combine pharma domain knowledge with data engineering and AI automation. If your team is working on problems like this - medical intelligence, life sciences data, or AI in life sciences - I'd genuinely love to chat.  
+> **[Nitin Paighowal on LinkedIn](https://www.linkedin.com/in/nitinpaighowal/)**
 
 ---
 
@@ -10,11 +10,11 @@
 
 Medical affairs and competitive intelligence teams in pharma spend a surprising amount of time doing something that should be automated: tracking what gets published at medical congresses.
 
-Every year, 50+ major congresses — ASCO, ASH, ESC, ESMO, AHA and dozens more — collectively produce tens of thousands of publications, abstracts, and trial readouts. For most teams, monitoring this means manual PubMed searches after each event, spreadsheets passed around by email, and a constant feeling that something important was missed.
+Every year, 50+ major congresses - ASCO, ASH, ESC, ESMO, AHA and dozens more - collectively produce tens of thousands of publications, abstracts, and trial readouts. For most teams, monitoring this means manual PubMed searches after each event, spreadsheets passed around by email, and a constant feeling that something important was missed.
 
 I built this system to replace that workflow entirely.
 
-It automatically collects publications from **53 major medical congresses** across **18 therapeutic areas**, classifies the type of evidence (RCT, meta-analysis, review, etc.), and presents everything through an interactive web interface — no database access or technical knowledge required for the end user.
+It automatically collects publications from **53 major medical congresses** across **18 therapeutic areas**, classifies the type of evidence (RCT, meta-analysis, review, etc.), and presents everything through an interactive web interface - no database access or technical knowledge required for the end user.
 
 **→ [See it live](https://paighowal.github.io/Global-Congress-Publication-Intelligence-System/)**
 
@@ -32,11 +32,11 @@ It automatically collects publications from **53 major medical congresses** acro
 
 ---
 
-## How the data is collected — the Python pipeline
+## How the data is collected - the Python pipeline
 
 This is the part I'm most proud of. No manual downloads, no copy-paste. The entire data collection process runs automatically through a Python pipeline.
 
-### Step 1 — Congress registry
+### Step 1 - Congress registry
 
 Every congress is defined in a JSON config file with its name, acronym, therapeutic areas, typical timing, and a PubMed search string tuned to that congress. Adding a new congress is just adding a new JSON block.
 
@@ -51,12 +51,12 @@ Every congress is defined in a JSON config file with its name, acronym, therapeu
 }
 ```
 
-### Step 2 — Automated PubMed search
+### Step 2 - Automated PubMed search
 
 For each congress and year, the pipeline hits the **NCBI Entrez API** (`esearch` + `efetch`) to pull every matching publication. It handles rate limits, batches requests in groups of 200, and retries on transient errors.
 
 ```python
-# Simplified — search PubMed for ASCO 2024 publications
+# Simplified - search PubMed for ASCO 2024 publications
 search_results = Entrez.esearch(
     db="pubmed",
     term=f"{congress.pubmed_search_term} AND 2024[pdat]"
@@ -64,7 +64,7 @@ search_results = Entrez.esearch(
 records = Entrez.efetch(db="pubmed", id=pmids, rettype="xml")
 ```
 
-### Step 3 — Publication type classification
+### Step 3 - Publication type classification
 
 PubMed assigns publication type tags to every paper (things like *Randomized Controlled Trial*, *Meta-Analysis*, *Review*, *Case Reports*). The pipeline reads those tags and maps them to one of 9 meaningful categories:
 
@@ -81,7 +81,7 @@ PubMed assigns publication type tags to every paper (things like *Randomized Con
 
 This matters because not all publications carry the same weight. A congress that generates 500 RCTs tells a very different story than one generating 500 editorials.
 
-### Step 4 — Storage and UI generation
+### Step 4 - Storage and UI generation
 
 Processed data lands in **PostgreSQL**. From there, two Python scripts generate static JavaScript data files that the frontend loads directly:
 
@@ -119,7 +119,7 @@ config/congress_config.json
   └── publications.html   Full publications browser
         │
         ▼
-  GitHub Pages — zero infrastructure, no server required
+  GitHub Pages - zero infrastructure, no server required
 ```
 
 The frontend is intentionally serverless. React 18 runs directly in the browser (no Node.js, no build step), data is pre-generated into JavaScript files, and the whole thing deploys as four static files. The only thing a user needs is a URL.
@@ -134,11 +134,11 @@ A year-by-quarter calendar showing all 53 congresses. Filter by therapeutic area
 
 ### Publications browser
 
-Search and filter across 32,000+ publications in real time. The filters are faceted — selecting "Oncology" as the therapeutic area automatically narrows the Congress dropdown to only show congresses with Oncology publications. Same logic applies across year, quarter, and publication type. Export any filtered view to CSV.
+Search and filter across 32,000+ publications in real time. The filters are faceted - selecting "Oncology" as the therapeutic area automatically narrows the Congress dropdown to only show congresses with Oncology publications. Same logic applies across year, quarter, and publication type. Export any filtered view to CSV.
 
 ### Summary view
 
-For a selected year, see total publications by congress, a breakdown by publication type (how many RCTs vs reviews vs case reports), and publication activity by therapeutic area — in one screen.
+For a selected year, see total publications by congress, a breakdown by publication type (how many RCTs vs reviews vs case reports), and publication activity by therapeutic area - in one screen.
 
 ### 2027 planning
 
@@ -156,11 +156,11 @@ Oncology · Hematology · Cardiology · Neurology · Psychiatry & CNS · Diabete
 
 **Medical affairs** can stop manually tracking congresses and spend that time on actual analysis. The system gives a structured, searchable record of what was published, where, and what type of evidence it represents.
 
-**Competitive intelligence** teams can see publication patterns across years and therapeutic areas — spotting when a competitor's drug starts generating a surge of RCT-level evidence at specific congresses before it becomes common knowledge.
+**Competitive intelligence** teams can see publication patterns across years and therapeutic areas - spotting when a competitor's drug starts generating a surge of RCT-level evidence at specific congresses before it becomes common knowledge.
 
-**Congress planning** — mapping 53 congresses across 4 quarters makes resource allocation tangible. You can see where the biggest evidence windows are and plan accordingly.
+**Congress planning** - mapping 53 congresses across 4 quarters makes resource allocation tangible. You can see where the biggest evidence windows are and plan accordingly.
 
-**Health economics and market access** — ISPOR and outcomes-focused congresses are tracked alongside clinical congresses, so the real-world evidence and HTA landscape lives in the same system as the clinical data.
+**Health economics and market access** - ISPOR and outcomes-focused congresses are tracked alongside clinical congresses, so the real-world evidence and HTA landscape lives in the same system as the clinical data.
 
 **The scale argument:** a team manually tracking 10 congresses a year is probably spending 200–400 hours on PubMed searches, spreadsheet maintenance, and chasing down links. This system cuts that to near zero and covers 5× as many congresses.
 
@@ -173,7 +173,7 @@ Oncology · Hematology · Cardiology · Neurology · Psychiatry & CNS · Diabete
 | Data collection | Python 3, NCBI Entrez API |
 | Storage | PostgreSQL |
 | DB driver | psycopg2 |
-| Frontend framework | React 18 (UMD — runs in browser, no build needed) |
+| Frontend framework | React 18 (UMD - runs in browser, no build needed) |
 | JSX compilation | Babel Standalone |
 | Styling | Inline React styles, Inter font |
 | Deployment | GitHub Pages (static, no backend) |
@@ -182,26 +182,8 @@ Oncology · Hematology · Cardiology · Neurology · Psychiatry & CNS · Diabete
 
 ## Running it locally
 
-The frontend works immediately — just open `ui/index.html` in a browser. Data is already baked into the JS files.
+The frontend works immediately - just open `ui/index.html` in a browser. Data is already baked into the JS files.
 
-To run the full pipeline (PostgreSQL + PubMed API key required):
-
-```bash
-# Dependencies
-pip install psycopg2-binary biopython python-dotenv
-
-# Configure
-cp config/.env.example .env
-# Add your DATABASE_URL and NCBI_API_KEY to .env
-
-# Run pipeline for a congress
-python core/pipeline.py --congress ASCO --year 2024
-
-# Regenerate frontend data
-python scripts/gen_jsx_data.py
-python scripts/gen_pubs_data.py
-python scripts/_splice_data.py
-```
 
 ---
 
@@ -229,4 +211,4 @@ pharmacongress/
 
 ---
 
-*Built by [Nitin Paighowal](https://www.linkedin.com/in/nitinpaighowal/) — open to roles in pharma tech, medical informatics, data engineering, and AI in life sciences.*
+*Built by [Nitin Paighowal](https://www.linkedin.com/in/nitinpaighowal/) - open to roles in pharma tech, advanced analytics, data engineering, and AI in life sciences.*
