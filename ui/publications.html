@@ -514,7 +514,7 @@ function PublicationsBrowser() {
             >
               <option value="">All Congresses</option>
               {congressOptions.map(c => (
-                <option key={c.id} value={c.id}>{c.acronym} — {c.name.slice(0,45)}</option>
+                <option key={c.id} value={c.id}>{c.acronym}: {c.name.slice(0,45)}</option>
               ))}
             </select>
 
@@ -814,9 +814,214 @@ function PaginationBar({ page, totalPages, total, setPage }) {
   );
 }
 
+// ── API ───────────────────────────────────────────────────────────────────────
+const API_BASE = "http://localhost:8002";
+
+// ── Semantic Search ───────────────────────────────────────────────────────────
+function SemanticSearch() {
+  const [q,        setQ]        = useState("");
+  const [congress, setCongress] = useState("");
+  const [year,     setYear]     = useState("");
+  const [results,  setResults]  = useState(null);
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  async function doSearch(e) {
+    e.preventDefault();
+    if (!q.trim()) return;
+    setLoading(true); setError(null); setResults(null);
+    try {
+      const params = new URLSearchParams({ q: q.trim(), n: 15 });
+      if (congress) params.set("congress", congress);
+      if (year)     { params.set("year_from", year); params.set("year_to", year); }
+      const res = await fetch(`${API_BASE}/semantic-search?${params}`);
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const all = await res.json();
+      setResults(all.filter(r => r.relevance > 0.50));
+    } catch (err) {
+      setError(err.message.includes("fetch")
+        ? "Cannot reach API. Start it with: python api/api.py"
+        : err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const relevanceBadge = r => {
+    const pct = Math.round(r * 100);
+    const hi  = r > 0.65, mid = r > 0.45;
+    return (
+      <span style={{
+        flexShrink:0, fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:10,
+        background: hi ? "#ECFDF5" : mid ? "#FFFBEB" : "#F9FAFB",
+        color:      hi ? "#065F46" : mid ? "#92400E" : COLOR.t3,
+        border:     `1px solid ${hi ? "#6EE7B7" : mid ? "#FDE68A" : COLOR.border}`,
+      }}>{pct}% match</span>
+    );
+  };
+
+  const tag = (text, bg, color) => text ? (
+    <span style={{ fontSize:11, padding:"2px 7px", borderRadius:4, background:bg, color, whiteSpace:"nowrap" }}>
+      {text}
+    </span>
+  ) : null;
+
+  return (
+    <div style={{ maxWidth:880, margin:"0 auto", padding:"28px 20px", fontFamily:FONT }}>
+      <p style={{ fontSize:13, color:COLOR.t3, marginBottom:16, lineHeight:1.5 }}>
+        Search {(18819).toLocaleString()} publications using natural language. Results are ranked by semantic
+        similarity using local vector embeddings (no keyword matching required).
+      </p>
+
+      {/* ── Form ── */}
+      <form onSubmit={doSearch} style={{ marginBottom:24 }}>
+        <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder='e.g. "SGLT2 inhibitors heart failure outcomes" or "PD-L1 response rate NSCLC"'
+            style={{
+              flex:1, padding:"10px 14px", borderRadius:8,
+              border:`1.5px solid ${COLOR.borderMid}`, fontSize:14, fontFamily:FONT,
+              outline:"none", color:COLOR.t1,
+            }}
+          />
+          <button type="submit" disabled={loading || !q.trim()} style={{
+            padding:"10px 22px", borderRadius:8, border:"none", cursor:"pointer",
+            background: COLOR.accent, color:"#fff",
+            fontFamily:FONT, fontSize:13, fontWeight:600,
+            opacity: loading || !q.trim() ? 0.55 : 1,
+          }}>
+            {loading ? "Searching…" : "Search"}
+          </button>
+        </div>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          <select value={congress} onChange={e => setCongress(e.target.value)}
+            style={{ padding:"5px 10px", borderRadius:6, border:`1px solid ${COLOR.border}`,
+              fontSize:12, fontFamily:FONT, color:COLOR.t2, background:COLOR.surface }}>
+            <option value="">All congresses</option>
+            {ALL_CONGRESSES.map(c => <option key={c.id} value={c.id}>{c.acronym}: {c.name}</option>)}
+          </select>
+          <select value={year} onChange={e => setYear(e.target.value)}
+            style={{ padding:"5px 10px", borderRadius:6, border:`1px solid ${COLOR.border}`,
+              fontSize:12, fontFamily:FONT, color:COLOR.t2, background:COLOR.surface }}>
+            <option value="">All years</option>
+            {ALL_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          {(congress || year) && (
+            <button type="button" onClick={() => { setCongress(""); setYear(""); }}
+              style={{ padding:"5px 10px", borderRadius:6, border:`1px solid ${COLOR.border}`,
+                fontSize:12, fontFamily:FONT, color:COLOR.t3, background:COLOR.surface, cursor:"pointer" }}>
+              Clear filters
+            </button>
+          )}
+        </div>
+      </form>
+
+      {/* ── Error ── */}
+      {error && (
+        <div style={{ padding:"10px 14px", background:"#FEF2F2", border:"1px solid #FECACA",
+          borderRadius:8, color:"#991B1B", fontSize:13, marginBottom:16 }}>
+          {error}
+        </div>
+      )}
+
+      {/* ── Results ── */}
+      {results !== null && (
+        results.length === 0 ? (
+          <p style={{ color:COLOR.t3, fontSize:14 }}>No publications above 50% match. Try rephrasing your query.</p>
+        ) : (
+          <div>
+            <p style={{ fontSize:12, color:COLOR.t3, marginBottom:14 }}>
+              {results.length} result{results.length !== 1 ? "s" : ""} above 50% match, ranked by relevance
+            </p>
+            {results.map((r, i) => (
+              <div key={r.pub_id} style={{
+                background:COLOR.surface, border:`1px solid ${COLOR.border}`,
+                borderRadius:10, padding:"14px 16px", marginBottom:10,
+              }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, marginBottom:8 }}>
+                  <span style={{ fontSize:13, fontWeight:600, color:COLOR.t1, lineHeight:1.45 }}>
+                    {i + 1}. {r.title}
+                  </span>
+                  {relevanceBadge(r.relevance)}
+                </div>
+                <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom: r.excerpt ? 8 : 0 }}>
+                  {tag(r.congress,        COLOR.accentBg,    COLOR.accent)}
+                  {tag(r.year ? String(r.year) : "", "#F3F4F6", COLOR.t2)}
+                  {tag(r.study_design,    "#FEF3C7",    "#92400E")}
+                  {tag(r.indication,      "#F5F3FF",    "#5B21B6")}
+                  {r.drugs && r.drugs.split(",").slice(0, 3).map(d => d.trim()).filter(Boolean).map(d =>
+                    tag(d, "#ECFDF5", "#065F46")
+                  )}
+                </div>
+                {r.excerpt && (
+                  <p style={{ fontSize:12, color:COLOR.t3, lineHeight:1.55, margin:0 }}>
+                    {r.excerpt}
+                  </p>
+                )}
+                {r.url && (
+                  <a href={r.url} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize:11, color:COLOR.accent, display:"inline-block", marginTop:6 }}>
+                    View publication →
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* ── Empty state ── */}
+      {results === null && !loading && !error && (
+        <div style={{ textAlign:"center", padding:"40px 0", color:COLOR.t4 }}>
+          <div style={{ fontSize:36, marginBottom:8 }}>◎</div>
+          <p style={{ fontSize:13 }}>Enter a query above to find relevant publications</p>
+          <p style={{ fontSize:12, marginTop:6 }}>
+            Tip: describe what you're looking for clinically, not just keywords
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── App shell with tab switcher ───────────────────────────────────────────────
+function App() {
+  const [tab, setTab] = useState("browse");
+
+  const tabBtn = (id, label) => (
+    <button onClick={() => setTab(id)} style={{
+      padding:"10px 20px", fontFamily:FONT, fontSize:13,
+      fontWeight: tab === id ? 700 : 500,
+      border:"none",
+      borderBottom: tab === id ? `2px solid ${COLOR.accent}` : "2px solid transparent",
+      background:"transparent",
+      color: tab === id ? COLOR.accent : COLOR.t3,
+      cursor:"pointer", transition:"color 0.15s, border-color 0.15s",
+    }}>{label}</button>
+  );
+
+  return (
+    <div>
+      <div style={{ borderBottom:`1px solid ${COLOR.border}`, background:COLOR.surface,
+        padding:"0 16px", display:"flex", gap:4 }}>
+        {tabBtn("browse", "Browse Publications")}
+        {tabBtn("search", "Semantic Search")}
+      </div>
+      {tab === "browse" && <PublicationsBrowser />}
+      {tab === "search" && <SemanticSearch />}
+    </div>
+  );
+}
+
 // ── Mount ─────────────────────────────────────────────────────────────────────
 const _root = ReactDOM.createRoot(document.getElementById('root'));
-_root.render(React.createElement(PublicationsBrowser, null));
+_root.render(React.createElement(App, null));
   </script>
 </body>
 </html>
