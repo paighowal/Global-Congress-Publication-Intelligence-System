@@ -101,6 +101,7 @@ function decodePub(row, idx) {
     quarter:   edition.quarter       || "",
     congressId: edition.congressId   || "",
     congress:  congress,
+    url:       row[5] || "",
   };
 }
 
@@ -672,9 +673,9 @@ function PubRow({ row, rowNum, search }) {
 
       {/* Title */}
       <td style={{ padding:"9px 14px 9px 10px" }}>
-        {row.pmid ? (
+        {(row.pmid || row.url) ? (
           <a
-            href={`https://pubmed.ncbi.nlm.nih.gov/${row.pmid}/`}
+            href={row.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${row.pmid}/` : row.url}
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -741,12 +742,12 @@ function PubRow({ row, rowNum, search }) {
 
       {/* Link */}
       <td style={{ padding:"9px 14px", textAlign:"center" }}>
-        {row.pmid ? (
+        {(row.pmid || row.url) ? (
           <a
-            href={`https://pubmed.ncbi.nlm.nih.gov/${row.pmid}/`}
+            href={row.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${row.pmid}/` : row.url}
             target="_blank"
             rel="noopener noreferrer"
-            title="View on PubMed"
+            title={row.pmid ? "View on PubMed" : "View abstract"}
             style={{
               display:"inline-flex", alignItems:"center", justifyContent:"center",
               width:26, height:26, borderRadius:6,
@@ -872,7 +873,7 @@ function SemanticSearch() {
   return (
     <div style={{ maxWidth:880, margin:"0 auto", padding:"28px 20px", fontFamily:FONT }}>
       <p style={{ fontSize:13, color:COLOR.t3, marginBottom:16, lineHeight:1.5 }}>
-        WORK IN PROGRESS ----------- Search {(18819).toLocaleString()} publications using natural language. Results are ranked by semantic
+        Search {(18819).toLocaleString()} publications using natural language. Results are ranked by semantic
         similarity using local vector embeddings (no keyword matching required).
       </p>
 
