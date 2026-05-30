@@ -816,7 +816,13 @@ function PaginationBar({ page, totalPages, total, setPage }) {
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
-const API_BASE = "http://localhost:8002";
+// Override with ?api=https://your-hf-space.hf.space in the URL, or set window.API_BASE before this script
+//const API_BASE = window.API_BASE
+const API_BASE = "https://palindrome-pharmacongress-api.hf.space";
+
+
+  || new URLSearchParams(window.location.search).get("api")
+  || "http://localhost:8002";
 
 // ── Semantic Search ───────────────────────────────────────────────────────────
 function SemanticSearch() {
