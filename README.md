@@ -1,4 +1,4 @@
-# Global Congress & Publication Intelligence System
+# Global Congress & Publication AI Intelligence System
 
 > **I'm currently open to new opportunities.**  
 > I built this to show what's possible when you combine pharma domain knowledge with data engineering and AI automation. If your team is working on problems like this - medical intelligence, life sciences data, or AI in life sciences - I'd genuinely love to chat.  
@@ -216,4 +216,4 @@ pharmacongress/
 
 *Built by [Nitin Paighowal](https://www.linkedin.com/in/nitinpaighowal/) - open to roles in pharma tech, advanced analytics, data engineering, and AI in life sciences.*
 
-**DISCLAIMER : Educational pupose only **
+> Educational use only. This tool is built for educational and research purposes only. All publication data is sourced from publicly available databases, including PubMed and publicly accessible congress proceedings. No proprietary data or confidential materials are used or reproduced. The interface, design, and analysis tools are original work. If you have any concerns about content, data usage, or intellectual property, please contact Nitin Paighowal directly - happy to address them promptly.
