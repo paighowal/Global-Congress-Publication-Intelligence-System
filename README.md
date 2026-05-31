@@ -215,3 +215,5 @@ pharmacongress/
 ---
 
 *Built by [Nitin Paighowal](https://www.linkedin.com/in/nitinpaighowal/) - open to roles in pharma tech, advanced analytics, data engineering, and AI in life sciences.*
+
+**DISCLAIMER : Educational pupose only **
