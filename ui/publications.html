@@ -106,7 +106,7 @@ function decodePub(row, idx) {
 }
 
 // ── Faceted filter helper ─────────────────────────────────────────────────────
-// Pass null/undefined/[] to skip a dimension — used for cross-filter facet computation
+// Pass null/undefined/[] to skip a dimension - used for cross-filter facet computation
 function runFilter({ year, quarters, congress, area, types, search }) {
   const s = (search || "").toLowerCase().trim();
   const result = [];
@@ -349,7 +349,7 @@ function PublicationsBrowser() {
 
   const totalAllPubs = PUBS.length;
 
-  // Congress options — only those available given current other filters
+  // Congress options - only those available given current other filters
   const congressOptions = ALL_CONGRESSES.filter(c => availCongressIds.has(c.id));
 
   const thStyle = (col) => ({
@@ -879,7 +879,7 @@ function SemanticSearch() {
       }}>
         <span style={{ fontSize:16 }}>🚧</span>
         <span style={{ fontSize:13, fontWeight:700, color:"#92400E" }}>WORK IN PROGRESS</span>
-        <span style={{ fontSize:12, color:"#92400E" }}>— Semantic search is being set up. Check back soon.</span>
+        <span style={{ fontSize:12, color:"#92400E" }}>- Semantic search is being set up. Check back soon.</span>
       </div>
       <p style={{ fontSize:13, color:COLOR.t3, marginBottom:16, lineHeight:1.5 }}>
         Search {(18819).toLocaleString()} publications using natural language. Results are ranked by semantic
