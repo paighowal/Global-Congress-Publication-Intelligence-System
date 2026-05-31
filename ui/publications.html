@@ -23,6 +23,7 @@
     ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
     a { text-decoration: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -823,44 +824,82 @@ function SemanticSearch() {
   const [q,        setQ]        = useState("");
   const [congress, setCongress] = useState("");
   const [year,     setYear]     = useState("");
-  const [results,  setResults]  = useState(null);
+  const [results,  setResults]  = useState(null);   // raw API results (unfiltered)
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState(null);
-  const inputRef = useRef(null);
+  const inputRef   = useRef(null);
+  const abortRef   = useRef(null);
+  const searchGen  = useRef(0);
+
+  // Post-search filter: applied instantly when congress/year change without
+  // re-running the search. Pre-search filter: still sent to API on submit.
+  const displayed = useMemo(() => {
+    if (!results) return null;
+    return results.filter(r => {
+      if (congress && r.congress !== congress) return false;
+      if (year     && String(r.year) !== year) return false;
+      return true;
+    });
+  }, [results, congress, year]);
+
+  const isPostFiltered = results !== null && displayed !== null &&
+    displayed.length !== results.length;
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  function cancel(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    searchGen.current++;           // invalidate any in-flight response
+    abortRef.current?.abort();
+    setLoading(false);
+    setError(null);
+  }
 
   async function doSearch(e) {
     e.preventDefault();
     if (!q.trim()) return;
+
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    const myGen = ++searchGen.current;  // snapshot for this request
+
     setLoading(true); setError(null); setResults(null);
     try {
-      const params = new URLSearchParams({ q: q.trim(), n: 15 });
+      const params = new URLSearchParams({ q: q.trim(), n: 20 });
       if (congress) params.set("congress", congress);
       if (year)     { params.set("year_from", year); params.set("year_to", year); }
-      const res = await fetch(`${API_BASE}/semantic-search?${params}`);
+      const res = await fetch(`${API_BASE}/semantic-search?${params}`,
+        { signal: abortRef.current.signal });
+
+      if (searchGen.current !== myGen) return;  // cancelled while waiting
+
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const all = await res.json();
-      setResults(all.filter(r => r.relevance > 0.50));
+
+      if (searchGen.current !== myGen) return;  // cancelled while reading body
+
+      setResults(all.filter(r => r.relevance > 0.25));
     } catch (err) {
+      if (searchGen.current !== myGen) return;  // cancelled - don't show error
+      if (err.name === "AbortError") return;
       setError(err.message.includes("fetch")
-        ? "Cannot reach API. Start it with: python api/api.py"
+        ? "Cannot reach API. Start it with: .venv\\Scripts\\python.exe api/api.py"
         : err.message);
     } finally {
-      setLoading(false);
+      if (searchGen.current === myGen) setLoading(false);
     }
   }
 
   const relevanceBadge = r => {
     const pct = Math.round(r * 100);
-    const hi  = r > 0.65, mid = r > 0.45;
+    const hi  = r >= 0.55, mid = r >= 0.35;
     return (
       <span style={{
-        flexShrink:0, fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:10,
+        flexShrink:0, fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:10,
         background: hi ? "#ECFDF5" : mid ? "#FFFBEB" : "#F9FAFB",
         color:      hi ? "#065F46" : mid ? "#92400E" : COLOR.t3,
         border:     `1px solid ${hi ? "#6EE7B7" : mid ? "#FDE68A" : COLOR.border}`,
-      }}>{pct}% match</span>
+      }}>{pct}%</span>
     );
   };
 
@@ -870,55 +909,80 @@ function SemanticSearch() {
     </span>
   ) : null;
 
+  const SUGGESTED = [
+    "PD-L1 inhibitor NSCLC response",
+    "SGLT2 heart failure outcomes",
+    "CAR-T solid tumor",
+    "bispecific antibody hematology",
+    "KRAS G12C lung cancer",
+    "amyloid PET Alzheimer diagnosis",
+    "atrial fibrillation stroke prevention",
+  ];
+
   return (
-    <div style={{ maxWidth:880, margin:"0 auto", padding:"28px 20px", fontFamily:FONT }}>
+    <div style={{ maxWidth:820, margin:"0 auto", padding:"32px 24px", fontFamily:FONT }}>
+
+      {/* ── Heading ── */}
+      <div style={{ marginBottom:20 }}>
+        <h2 style={{ fontSize:20, fontWeight:700, color:COLOR.t1, marginBottom:6, letterSpacing:"-0.3px" }}>
+          Search Publications
+        </h2>
+        <p style={{ fontSize:13, color:COLOR.t3, lineHeight:1.6 }}>
+          Describe what you're looking for - a drug, a condition, a clinical question.
+          Searches across {PUBS.length.toLocaleString()} congress publications by meaning, not just keywords.
+        </p>
+      </div>
+
+      {/* ── WIP banner ── */}
       <div style={{
         display:"inline-flex", alignItems:"center", gap:8,
         background:"#FFFBEB", border:"1px solid #FDE68A",
-        borderRadius:8, padding:"8px 14px", marginBottom:16,
+        borderRadius:8, padding:"8px 14px", marginBottom:20,
       }}>
-        <span style={{ fontSize:16 }}>🚧</span>
-        <span style={{ fontSize:13, fontWeight:700, color:"#92400E" }}>WORK IN PROGRESS</span>
-        <span style={{ fontSize:12, color:"#92400E" }}>- Semantic search is being set up. Check back soon.</span>
+        <span style={{ fontSize:13 }}>🚧</span>
+        <span style={{ fontSize:12, fontWeight:600, color:"#92400E" }}>Work in progress</span>
+        <span style={{ fontSize:12, color:"#B45309" }}>- still being set up, check back soon.</span>
       </div>
-      <p style={{ fontSize:13, color:COLOR.t3, marginBottom:16, lineHeight:1.5 }}>
-        Search {(18819).toLocaleString()} publications using natural language. Results are ranked by semantic
-        similarity using local vector embeddings (no keyword matching required).
-      </p>
 
       {/* ── Form ── */}
-      <form onSubmit={doSearch} style={{ marginBottom:24 }}>
+      <form onSubmit={doSearch} style={{ marginBottom:20 }}>
         <div style={{ display:"flex", gap:8, marginBottom:10 }}>
           <input
             ref={inputRef}
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder='e.g. "SGLT2 inhibitors heart failure outcomes" or "PD-L1 response rate NSCLC"'
+            placeholder="e.g. VEGF inhibitor combination therapy, or HER2 breast cancer survival"
             style={{
               flex:1, padding:"10px 14px", borderRadius:8,
-              border:`1.5px solid ${COLOR.borderMid}`, fontSize:14, fontFamily:FONT,
+              border:`1.5px solid ${q ? COLOR.accent : COLOR.border}`,
+              fontSize:14, fontFamily:FONT,
               outline:"none", color:COLOR.t1,
             }}
           />
           <button type="submit" disabled={loading || !q.trim()} style={{
             padding:"10px 22px", borderRadius:8, border:"none", cursor:"pointer",
-            background: COLOR.accent, color:"#fff",
+            background: loading ? "#93C5FD" : COLOR.accent, color:"#fff",
             fontFamily:FONT, fontSize:13, fontWeight:600,
-            opacity: loading || !q.trim() ? 0.55 : 1,
+            opacity: !q.trim() ? 0.55 : 1,
+            whiteSpace:"nowrap", display:"flex", alignItems:"center", gap:6,
           }}>
-            {loading ? "Searching…" : "Search"}
+            {loading
+              ? <><span style={{ width:10, height:10, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTopColor:"#fff", display:"inline-block", animation:"spin 0.7s linear infinite" }} /> Searching…</>
+              : "Search"
+            }
           </button>
         </div>
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
           <select value={congress} onChange={e => setCongress(e.target.value)}
-            style={{ padding:"5px 10px", borderRadius:6, border:`1px solid ${COLOR.border}`,
-              fontSize:12, fontFamily:FONT, color:COLOR.t2, background:COLOR.surface }}>
+            style={{ padding:"5px 10px", borderRadius:6, border:`1px solid ${congress ? COLOR.accent : COLOR.border}`,
+              fontSize:12, fontFamily:FONT, color: congress ? COLOR.t1 : COLOR.t3, background:COLOR.surface }}>
             <option value="">All congresses</option>
             {ALL_CONGRESSES.map(c => <option key={c.id} value={c.id}>{c.acronym}: {c.name}</option>)}
           </select>
           <select value={year} onChange={e => setYear(e.target.value)}
-            style={{ padding:"5px 10px", borderRadius:6, border:`1px solid ${COLOR.border}`,
-              fontSize:12, fontFamily:FONT, color:COLOR.t2, background:COLOR.surface }}>
+            style={{ padding:"5px 10px", borderRadius:6, border:`1px solid ${year ? COLOR.accent : COLOR.border}`,
+              fontSize:12, fontFamily:FONT, color: year ? COLOR.t1 : COLOR.t3, background:COLOR.surface }}>
             <option value="">All years</option>
             {ALL_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -926,11 +990,53 @@ function SemanticSearch() {
             <button type="button" onClick={() => { setCongress(""); setYear(""); }}
               style={{ padding:"5px 10px", borderRadius:6, border:`1px solid ${COLOR.border}`,
                 fontSize:12, fontFamily:FONT, color:COLOR.t3, background:COLOR.surface, cursor:"pointer" }}>
-              Clear filters
+              Clear
             </button>
           )}
         </div>
       </form>
+
+      {/* ── Cancel (outside form so nothing can intercept the click) ── */}
+      {loading && (
+        <div style={{ marginTop:10, marginBottom:4 }}>
+          <button
+            onClick={cancel}
+            style={{
+              padding:"6px 16px", borderRadius:6,
+              border:`1px solid ${COLOR.border}`,
+              cursor:"pointer", background:COLOR.surface, color:COLOR.t3,
+              fontFamily:FONT, fontSize:12, fontWeight:500,
+            }}
+          >
+            Cancel search
+          </button>
+        </div>
+      )}
+
+      {/* ── Suggested queries ── */}
+      {displayed === null && !loading && !error && (
+        <div style={{ marginBottom:24 }}>
+          <div style={{ fontSize:11, color:COLOR.t4, marginBottom:8 }}>
+            Not sure where to start? Try one of these:
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {SUGGESTED.map(s => (
+              <button key={s} onClick={() => setQ(s)} style={{
+                padding:"5px 12px", borderRadius:6,
+                border:`1px solid ${COLOR.border}`,
+                background:COLOR.surface, color:COLOR.t2,
+                fontFamily:FONT, fontSize:12, cursor:"pointer",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor=COLOR.accent; e.currentTarget.style.color=COLOR.accent; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor=COLOR.border; e.currentTarget.style.color=COLOR.t2; }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
 
       {/* ── Error ── */}
       {error && (
@@ -941,15 +1047,25 @@ function SemanticSearch() {
       )}
 
       {/* ── Results ── */}
-      {results !== null && (
-        results.length === 0 ? (
-          <p style={{ color:COLOR.t3, fontSize:14 }}>No publications above 50% match. Try rephrasing your query.</p>
+      {displayed !== null && (
+        displayed.length === 0 ? (
+          <div style={{ padding:"20px 0" }}>
+            <p style={{ color:COLOR.t2, fontSize:14, fontWeight:600, marginBottom:6 }}>No results found.</p>
+            <p style={{ color:COLOR.t3, fontSize:13, lineHeight:1.6 }}>
+              {isPostFiltered
+                ? "No results match the selected filters. Try clearing the congress or year filter."
+                : "Try broader terms - or remove the congress and year filters."}
+            </p>
+          </div>
         ) : (
           <div>
             <p style={{ fontSize:12, color:COLOR.t3, marginBottom:14 }}>
-              {results.length} result{results.length !== 1 ? "s" : ""} above 50% match, ranked by relevance
+              {isPostFiltered
+                ? <>{displayed.length} of {results.length} results - <button onClick={() => { setCongress(""); setYear(""); }} style={{ fontSize:12, color:COLOR.accent, background:"none", border:"none", cursor:"pointer", padding:0 }}>clear filters</button></>
+                : <>{displayed.length} result{displayed.length !== 1 ? "s" : ""} - ranked by relevance</>
+              }
             </p>
-            {results.map((r, i) => (
+            {displayed.map((r, i) => (
               <div key={r.pub_id} style={{
                 background:COLOR.surface, border:`1px solid ${COLOR.border}`,
                 borderRadius:10, padding:"14px 16px", marginBottom:10,
@@ -987,12 +1103,12 @@ function SemanticSearch() {
       )}
 
       {/* ── Empty state ── */}
-      {results === null && !loading && !error && (
-        <div style={{ textAlign:"center", padding:"40px 0", color:COLOR.t4 }}>
-          <div style={{ fontSize:36, marginBottom:8 }}>◎</div>
-          <p style={{ fontSize:13 }}>Enter a query above to find relevant publications</p>
-          <p style={{ fontSize:12, marginTop:6 }}>
-            Tip: describe what you're looking for clinically, not just keywords
+      {displayed === null && !loading && !error && (
+        <div style={{ padding:"16px 0", color:COLOR.t4 }}>
+          <p style={{ fontSize:12, lineHeight:1.7 }}>
+            Tip: write a short phrase describing what you're looking for clinically -
+            treatment outcomes, a specific drug, a disease stage, a trial design.
+            You don't need exact title words.
           </p>
         </div>
       )}
@@ -1021,7 +1137,7 @@ function App() {
       <div style={{ borderBottom:`1px solid ${COLOR.border}`, background:COLOR.surface,
         padding:"0 16px", display:"flex", gap:4 }}>
         {tabBtn("browse", "Browse Publications")}
-        {tabBtn("search", "Semantic Search")}
+        {tabBtn("search", "Search by Topic")}
       </div>
       {tab === "browse" && <PublicationsBrowser />}
       {tab === "search" && <SemanticSearch />}
@@ -1029,9 +1145,41 @@ function App() {
   );
 }
 
+// ── Disclaimer footer ─────────────────────────────────────────────────────────
+function Disclaimer() {
+  return (
+    <div style={{
+      borderTop:"1px solid #E5E7EB", background:"#F9FAFB",
+      padding:"14px 24px", marginTop:40,
+    }}>
+      <p style={{
+        fontFamily:"'Inter','Segoe UI',system-ui,sans-serif",
+        fontSize:11, color:"#9CA3AF", lineHeight:1.7, margin:0,
+        maxWidth:900,
+      }}>
+        <strong style={{ color:"#6B7280" }}>Educational use only.</strong>{" "}
+        This tool is built for educational and research purposes only. All publication data is sourced
+        from publicly available databases, including PubMed and publicly accessible congress proceedings.
+        No proprietary data or confidential materials are used or reproduced. The interface, design, and
+        analysis tools are original work. If you have any concerns about content, data usage, or
+        intellectual property, please contact{" "}
+        <a href="mailto:nitinpango@gmail.com" style={{ color:"#6B7280", textDecoration:"underline" }}>
+          Nitin Paighowal
+        </a>{" "}
+        directly - happy to address them promptly.
+      </p>
+    </div>
+  );
+}
+
 // ── Mount ─────────────────────────────────────────────────────────────────────
 const _root = ReactDOM.createRoot(document.getElementById('root'));
-_root.render(React.createElement(App, null));
+_root.render(
+  React.createElement(React.Fragment, null,
+    React.createElement(App, null),
+    React.createElement(Disclaimer, null)
+  )
+);
   </script>
 </body>
 </html>
